@@ -1,0 +1,60 @@
+	 initial_x = 0.00
+	 initial_y = 0.30
+	 initial_z = 0.5
+	 initial_rx = 1.0
+	 initial_ry = 0.0
+	 initial_rz = 0.0
+	 initial_rw = 0.0
+
+	 target_pose = create_geometry_msg(initial_x,
+												  initial_y,
+												  initial_z,
+												  initial_rx,
+												  initial_ry,
+												  initial_rz,
+												  initial_rw)
+
+	 target_pose0 = create_geometry_msg(initial_x + 0.15,
+												  initial_y,
+												  initial_z,
+												  initial_rx,
+												  initial_ry,
+												  initial_rz,
+												  initial_rw)
+
+	 target_pose1 = create_geometry_msg(initial_x + 0.15,
+												  initial_y + 0.3,
+												  initial_z,
+												  initial_rx,
+												  initial_ry,
+												  initial_rz,
+												  initial_rw)
+
+	 target_pose2 = create_geometry_msg(initial_x - 0.15,
+												  initial_y + 0.3,
+												  initial_z,
+												  initial_rx,
+												  initial_ry,
+												  initial_rz,
+												  initial_rw)
+
+	 target_pose3 = create_geometry_msg(initial_x - 0.15,
+												  initial_y,
+												  initial_z,
+												  initial_rx,
+												  initial_ry,
+												  initial_rz,
+												  initial_rw)
+
+	 move_group.set_pose_target(target_pose)
+
+	 # plan = move_group.go(wait=True)
+	 # print(plan)
+	 waypoints = [
+						  target_pose,
+						  target_pose0,
+						  target_pose2,
+						  target_pose1,
+						  target_pose3,
+						  target_pose
+					 ]
