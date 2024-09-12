@@ -11,72 +11,12 @@ import numpy as np
 import inspect
 import torch
 from torchvision import transforms
-from models import CHARberoViVit
+from models import HAR_Transformer
 from utils import CutBlackContour
 import torch.nn.functional as F
 from data_glove_driver import ImuDriver
 import rospy
 from std_msgs.msg import Bool
-
-
-def stop_and_go2next_action(msg):
-    global is_active_classifier, global_idx
-    is_active_classifier = False
-
-    #global_idx = global_idx+1
-    if global_idx < 4:
-        global_idx += 1
-    else:
-        global_idx = 0
-
-
-# Function to update action timing
-def update_action_timing(predicted_action):
-    global current_action, action_start_time
- 
-    current_time = time.time()
- 
-    # If the action has changed or this is the first frame
-    if predicted_action != current_action:
-        if current_action is not None:
-            # Calculate the duration of the previous action
-            action_durations[current_action] = current_time - action_start_time
- 
-        # Start timing the new action
-        current_action = predicted_action
-        action_start_time = current_time
-    else:
-        # Update the duration for the current action
-        action_durations[current_action] = current_time - action_start_time
- 
-    # Check if the current action duration exceeds the threshold
-    if action_durations.get(current_action, 0) > action_threshold:
-        return True  # Action has been performed for more than 0.5 seconds
-    else:
-        return False  # Action has not yet reached the threshold
-
-
-def update_action_timing_window(predicted_action):
-    global current_action, action_start_time, buffer
- 
-    current_time = time.time()
-
-    
-    buffer = torch.roll(buffer, shifts=-1, dims=0)
- 
-    buffer[-1] = predicted_action
-
-    count = 0
-    for b in buffer:
-        if b == predicted_action:
-            count = count +1
-
-    #print(buffer)
-    if count >= 10:
-        buffer[:] = torch.nan
-        return True
-    else:
-        return False
 
 
 
@@ -87,36 +27,20 @@ def signal_handler(sig, frame):
         print('Ctrl+C detected. Stopping threads...')
         thread_killer = True
         
-
-def deserialize_imu_data(data_str):
-    data_str = data_str.split('\n')[0].split(',')[6:]
-
-    data_np = torch.zeros((9))
-
-    assert len(data_str) == 9
-
-    for i, x in enumerate(data_str):
-        data_np[i] = float(x)
-    #print(data_np)
-    #print(data_np.shape)
-    return data_np
+        
     
-def IMUs_driver():
+def IMUs_driver(hand):
     ''' Start the IMU driver to listen for IMU data. '''
-    global thread_killer, imu_buff_dict, hand
+    global thread_killer, imu_buff_dict
     imu_driver = ImuDriver(hand)
 
     while True:
         imu_data, not_socket_timeout = imu_driver.listener(thread_killer)
-            
-        #print(imu_data)
+        
+        # print(imu_data)
         sensor_id = imu_data.split(',')[1]
-        #print(sensor_id)
-
-        imu_data = deserialize_imu_data(imu_data)
-
+        # print(sensor_id)
         imu_buff_dict[sensor_id] = imu_data
-        #print(imu_buff_dict)
 
         if thread_killer or not not_socket_timeout:
             for sensor_name in imu_sensor_names:
@@ -129,7 +53,7 @@ def IMUs_driver():
 
 def IMUs_downsampler():
     ''' Start the IMU driver to listen for IMU data. '''
-    global thread_killer, imu_buff_dict, imu_buff_downsampled, fps
+    global thread_killer, imu_buff_dict, imu_buff_dict_downsampled, fps
 
     interval = 1.0 / fps
 
@@ -169,16 +93,10 @@ def IMUs_downsampler():
     while True:
         start_time = time.time()
 
-        np.zeros((72))
+        for k in sorted(imu_buff_dict.keys()):
+            imu_buff_dict_downsampled[k] = imu_buff_dict[k] 
 
-        for j, k in enumerate(sorted(imu_buff_dict.keys())):
-            if imu_buff_dict[k] is not None:
-                imu_buff_downsampled[j*9:(j+1)*9] = imu_buff_dict[k] 
-
-        imu_buff_downsampled = (imu_buff_downsampled - means) / stds
-
-        #print(imu_buff_downsampled)
-        #print('\n')
+        imu_files[i] = (imu_files[i] - means) / stds
 
         if thread_killer:
             break
@@ -196,7 +114,7 @@ def IMUs_downsampler():
 def capture_video():
     """Capture video frames from the specified video source and add them to the queue."""
     global videoOn1, videoOn2, thread_killer, frame_buff_0, frame_buff_1, fps
-    vid1 = cv2.VideoCapture(1, cv2.CAP_V4L)
+    vid1 = cv2.VideoCapture(0, cv2.CAP_V4L)
     vid2 = cv2.VideoCapture(3, cv2.CAP_V4L)
     interval = 1.0 / fps
 
@@ -278,7 +196,7 @@ def capture_video():
 
 
 def online_classification():
-    global thread_killer, frame_buff_0, frame_buff_1, experiment_actions, global_idx, imu_buff_downsampled, is_active_classifier, current_action, publisher, fps
+    global thread_killer, frame_buff_0, frame_buff_1, imu_buff_dict_downsampled, publisher, fps
 
     nhead = 16
     num_encoder_layers = 2
@@ -312,8 +230,8 @@ def online_classification():
 
     print('Model Initialized') 
     base_path = '/home/holab/Desktop/JAIST_Cylinder'
-    model.load_state_dict(torch.load(f'{base_path}/best_models/_idle_checkpoint_model_IMUdoubleVideo_0.0001lr_16bs_224px_56ps_FalseAug.pt'))
-    print('Model State Loaded') 
+    model = HAR_Transformer(n_features, nhead, num_encoder_layers, dim_feedforward, len(action_names), max_time).to(device)
+    model.load_state_dict(torch.load(f'{base_path}/_new_imu_results/_idle_checkpoint_model_IMUdoubleVideo_0.0001lr_16bs_224px_56ps_FalseAug.pt'))    print('Model State Loaded') 
     model.eval()
     print('Model in evaluation mode\n')
 
@@ -339,7 +257,7 @@ def online_classification():
     #just_once = True
 
     while True:
-        if frame_buff_0 is None or frame_buff_1 is None:# and imu_buff_downsampled is not None:
+        if frame_buff_0 is None or frame_buff_1 is None:# and imu_buff_dict_downsampled is not None:
             print('Waiting for buffer completion')
             buffer_insert_timer = time.time()
             continue
@@ -347,40 +265,35 @@ def online_classification():
             start_time = time.time()
 
             # Roll the windows
-            video1_window = torch.roll(video1_window, shifts=-1, dims=1)
-            video2_window = torch.roll(video2_window, shifts=-1, dims=1)
+            #video1_window = torch.roll(video1_window, shifts=-1, dims=1)
+            #video2_window = torch.roll(video2_window, shifts=-1, dims=1)
             imu_window = torch.roll(imu_window, shifts=-1, dims=1)
 
             # Put the new elements in the windows
-            video1_window[:, -1, :, :, :] = frame_buff_0[:, :, :]
-            video2_window[:, -1, :, :, :] = frame_buff_1[:, :, :]
-            imu_window[:, -1, :] = imu_buff_downsampled[:]
+            #video1_window[:, -1, :, :, :] = frame_buff_0[:, :, :]
+            #video2_window[:, -1, :, :, :] = frame_buff_1[:, :, :]
+            imu_window[:, -1, :] = imu_buff_dict_downsampled[:]
 
 
-            if not torch.isnan(video1_window).any() and not torch.isnan(video2_window).any() and not torch.isnan(imu_window).any():
-                if is_active_classifier:
-                    #if just_once:
-                    #    print(time.time() - buffer_insert_timer)
-                    #    just_once = False
-                    #    exit()
-                    outputs = model(video1_window, video2_window, imu_window, batch_length)
+            if not torch.isnan(video1_window).any() and not torch.isnan(video2_window).any():
 
-                    outputs = F.softmax(outputs, dim=1)
-                    _, predicted = torch.max(outputs, 1)
-                    if outputs[0][predicted.item()] > 0.0:
-                            output_labels = predicted
-                    else:
-                        output_labels = 14
-                
-                    action_performed_long_enough = update_action_timing_window(output_labels)
-                    #print(f'.....{action_names[output_labels]}: {output_labels}')
-                    if action_performed_long_enough:
-                        print(f'.....{action_names[output_labels]}: {output_labels}')
-                        #current_action = None
-                        # Publish Ros message to start the robot
-                        if action_names[output_labels] == experiment_actions[global_idx]:
-                            publisher.publish(True)
-                            
+                #if just_once:
+                #    print(time.time() - buffer_insert_timer)
+                #    just_once = False
+                #    exit()
+                outputs = model(imu_window, batch_length)
+
+                outputs = F.softmax(outputs, dim=1)
+                _, predicted = torch.max(outputs, 1)
+                if outputs[0][predicted.item()] > 0.0:
+                        output_labels = predicted
+                else:
+                    output_labels = 14
+            
+                #print(f'.....{action_names[output_labels]}: {output_labels}')
+
+                # Publish Ros message to start the robot
+                publisher.publish(True)
 
             else:
                 print('window not full... waiting')
@@ -419,8 +332,8 @@ def main():
 
     driver_threads.extend([
                             video_capture_thread,
-                            imu_thread,
-                            imu_downsampling_thread,
+                            #imu_thread,
+                            #imu_downsampling_thread,
                             #classification_thread
                          ])
 
@@ -447,10 +360,6 @@ def main():
     print('All threads stopped.')
 
 
-def activate_classifier(msg):
-    global is_active_classifier
-    is_active_classifier = True
-
 
 if __name__ == "__main__":
     # Define global variables
@@ -459,43 +368,51 @@ if __name__ == "__main__":
     videoOn1, videoOn2 = False, False
     thread_killer = False
 
-    is_active_classifier = False
-
     # Buffers to hold frames captured from each camera
     frame_buff_0 = None
     frame_buff_1 = None
     imu_buff_dict = {s_name:None for s_name in imu_sensor_names}
-    imu_buff_downsampled = torch.zeros((72))
+    imu_buff_dict_downsampled = {s_name:None for s_name in imu_sensor_names}
     #print(sorted(imu_buff_dict.keys()))
     #exit()
-    hand = 'left'
+    hand = 'right'
     fps = 29.0
-
-    #            ['linger', 'massaging', 'patting', 
-    #            'pinching', 'press', 'pull', 
-    #            'push', 'rub', 'scratching', 
-    #            'shaking', 'squeeze', 'stroke', 
-    #            'tapping', 'trembling', 'idle']
-
-    experiment_actions = ['patting', 'massaging', 'patting', 'pinching', 'press']
-    #experiment_actions = ['pull', 'squeeze', 'rub', 'scratching', 'shaking']
-    #experiment_actions = ['trembling', 'tapping', 'stroke', 'massaging', 'press']
-    #experiment_actions = ['patting', 'squeeze', 'stroke', 'pull', 'pinching']
-    #experiment_actions = ['linger', 'rub', 'scratching', 'shaking', 'trembling']
-
-    global_idx = 0 
 
     rospy.init_node('online_classification', anonymous=True)
     publisher = rospy.Publisher('/StartNextAction', Bool, queue_size = 10)
-    rospy.Subscriber('/ActivateClassifier', Bool, activate_classifier, queue_size = 2)
-    rospy.Subscriber('/StartNextAction', Bool, stop_and_go2next_action, queue_size = 1)
 
-    # Thresholding variables
-    current_action = None
-    action_start_time = None
-    action_threshold = 0.3  # Threshold in seconds
-    action_durations = {}
-    buffer = torch.full((15,), torch.nan)
+
+    #for i in range(10):
+    #    vid1 = cv2.VideoCapture(i)
+    #    print(f'{i}: {vid1.isOpened()}')
+    #exit()
+    #vid1 = cv2.VideoCapture(2)
+    #print(f'{vid1}: {vid1.isOpened()}')
+    #vid2 = cv2.VideoCapture(0)
+    #print(f'{vid2}: {vid2.isOpened()}')
+
+    #while True:
+    #    if  vid1:
+    #        ret1, frame1 = vid1.read()
+
+    #    if  vid2:
+    #        ret2, frame2 = vid2.read()
+
+    #    print(ret1)
+    #    print(ret2)
+    #    if ret1:
+    #        frame_buff_0 = frame1
+    #        cv2.imshow(f'frame_{1}', frame_buff_0)
+    #    if ret2:
+    #        frame_buff_1 = frame2
+    #        cv2.imshow(f'frame_{2}', frame_buff_1)
+
+    #    if cv2.waitKey(1) & 0xFF == ord('q'):
+    #        break
+
+    #input('aa')
+    #exit()
+
     main()
 
    

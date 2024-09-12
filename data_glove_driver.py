@@ -15,7 +15,7 @@ import time
 '''LA CLASSE CHE GESTISCE LA COMUNICAZIONE SOCKET E LA RICEZIONE DEI DATI'''
 class ImuDriver:
 
-    def __init__(self, hand):
+    def __init__(self, hand, verbose=False):
         self.in_udp_ip = '150.65.152.83' #'130.251.13.158' #STATIC IP ETHERNET CABLE; '192.168.0.101' #Hard-coded static IP
         self.in_udp_port = 2395
 
@@ -45,8 +45,8 @@ class ImuDriver:
             self.name_conversion = self.name_conversion_R
         else:
             self.name_conversion = self.name_conversion_L
-
-        with open("config/driver_config.txt") as f:
+                    
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config/driver_config.txt")) as f:
             lines = f.readlines()
         
         self.names = {}
@@ -59,6 +59,7 @@ class ImuDriver:
         self.connectedIMUs = {n:0 for n in self.name_conversion.values()}
 
         self.msgCounter = 0
+        self.verbose = verbose
 
         self.in_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.in_sock.bind((self.in_udp_ip, self.in_udp_port))
@@ -126,19 +127,17 @@ class ImuDriver:
                 str(self.msg.magnetic_field.y) + "," + 
                 str(self.msg.magnetic_field.z) +  
                 "\n")
-            # print(tmp, end='\r')
 
-            # sensor_queue.put(tmp)
-
-            # self.connectedIMUs[self.name_conversion[self.names[ID]]] = 1
-            # self.msgCounter += 1
-            # # print(self.msgCounter, end='\r')
-            # # print(self.name_conversion[self.names[ID]])
-            # if self.msgCounter == 100:
-            #     self.connectedIMUs = {n:0 for n in self.name_conversion.values()}
-            #     self.msgCounter = 0
-            # elif  self.msgCounter > 30:
-            #     print(self.connectedIMUs)
+            if self.verbose:
+                self.connectedIMUs[self.name_conversion[self.names[ID]]] = 1
+                self.msgCounter += 1
+                # print(self.msgCounter, end='\r')
+                # print(self.name_conversion[self.names[ID]])
+                if self.msgCounter == 100:
+                    self.connectedIMUs = {n:0 for n in self.name_conversion.values()}
+                    self.msgCounter = 0
+                elif  self.msgCounter > 30:
+                    print(self.connectedIMUs)
 
             return tmp, True
 
@@ -171,7 +170,7 @@ class ImuDriver:
 
 
 def main(): 
-    imu_driver = ImuDriver('left')
+    imu_driver = ImuDriver('left', True)
     imu_driver.listener_loop(Queue(), False)
 
 

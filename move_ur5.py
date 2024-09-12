@@ -49,7 +49,7 @@ def move_ur5():
 									  initial_rw)
 
 	
-	move_group.set_pose_target(target_pose)
+	#move_group.set_pose_target(target_pose)
 	
 	#plan = move_group.go(wait=True)
 	#print(plan)

@@ -19,17 +19,6 @@ import rospy
 from std_msgs.msg import Bool
 
 
-def stop_and_go2next_action(msg):
-    global is_active_classifier, global_idx
-    is_active_classifier = False
-
-    #global_idx = global_idx+1
-    if global_idx < 4:
-        global_idx += 1
-    else:
-        global_idx = 0
-
-
 # Function to update action timing
 def update_action_timing(predicted_action):
     global current_action, action_start_time
@@ -196,8 +185,8 @@ def IMUs_downsampler():
 def capture_video():
     """Capture video frames from the specified video source and add them to the queue."""
     global videoOn1, videoOn2, thread_killer, frame_buff_0, frame_buff_1, fps
-    vid1 = cv2.VideoCapture(1, cv2.CAP_V4L)
-    vid2 = cv2.VideoCapture(3, cv2.CAP_V4L)
+    vid1 = cv2.VideoCapture(0, cv2.CAP_V4L)
+    vid2 = cv2.VideoCapture(2, cv2.CAP_V4L)
     interval = 1.0 / fps
 
     transform1 = transforms.Compose([  
@@ -380,7 +369,13 @@ def online_classification():
                         # Publish Ros message to start the robot
                         if action_names[output_labels] == experiment_actions[global_idx]:
                             publisher.publish(True)
-                            
+                            is_active_classifier = False
+
+                            #global_idx = global_idx+1
+                            if global_idx < 4:
+                                global_idx += 1
+                            else:
+                                global_idx = 0
 
             else:
                 print('window not full... waiting')
@@ -477,18 +472,17 @@ if __name__ == "__main__":
     #            'shaking', 'squeeze', 'stroke', 
     #            'tapping', 'trembling', 'idle']
 
-    experiment_actions = ['patting', 'massaging', 'patting', 'pinching', 'press']
-    #experiment_actions = ['pull', 'squeeze', 'rub', 'scratching', 'shaking']
-    #experiment_actions = ['trembling', 'tapping', 'stroke', 'massaging', 'press']
-    #experiment_actions = ['patting', 'squeeze', 'stroke', 'pull', 'pinching']
-    #experiment_actions = ['linger', 'rub', 'scratching', 'shaking', 'trembling']
+    experiment_actions = ['linger', 'massaging', 'patting', 'pinching', 'press']
+    experiment_actions = ['pull', 'squeeze', 'rub', 'scratching', 'shaking']
+    experiment_actions = ['trembling', 'tapping', 'stroke', 'massaging', 'press']
+    experiment_actions = ['patting', 'squeeze', 'stroke', 'pull', 'pinching']
+    experiment_actions = ['linger', 'rub', 'scratching', 'shaking', 'trembling']
 
     global_idx = 0 
 
     rospy.init_node('online_classification', anonymous=True)
     publisher = rospy.Publisher('/StartNextAction', Bool, queue_size = 10)
     rospy.Subscriber('/ActivateClassifier', Bool, activate_classifier, queue_size = 2)
-    rospy.Subscriber('/StartNextAction', Bool, stop_and_go2next_action, queue_size = 1)
 
     # Thresholding variables
     current_action = None
